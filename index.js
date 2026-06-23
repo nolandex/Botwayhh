@@ -2,16 +2,27 @@ const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, f
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
 
-let TOTAL_HARGA = 300000; 
 const PREFIX = '!'; 
-const NOMOR_BOT = '6285156779923'; 
+
+// 1. DAFTAR NOMOR BOT YANG INGIN DIAKTIFKAN
+// Kamu bisa menambah baris ke bawah sesuai dengan jumlah bot yang ingin dijalankan secara paralel.
+const DAFTAR_BOT = [
+    { nomor: '6285156779923', folderSesi: 'sesi_bot_1' },
+    { nomor: '6289691685228', folderSesi: 'sesi_bot_2' } // Contoh nomor kedua (silakan ganti dengan nomor aktifmu)
+];
+
+// Penyimpanan target harga dinamis agar tidak saling bercampur antar grup/bot
+const memoriHarga = {};
+const HARGA_DEFAULT = 300000;
 
 function formatRupiah(angka) {
     return 'Rp ' + Math.ceil(angka).toLocaleString('id-ID');
 }
 
-async function jalankanBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('sesi_bot');
+// Fungsi utama pemicu instance bot WhatsApp
+async function inisialisasiBot(konfigurasiBot) {
+    const { nomor, folderSesi } = konfigurasiBot;
+    const { state, saveCreds } = await useMultiFileAuthState(folderSesi);
     const { version } = await fetchLatestBaileysVersion();
 
     const sock = makeWASocket({
@@ -19,22 +30,23 @@ async function jalankanBot() {
         version,
         printQRInTerminal: false, 
         logger: require('pino')({ level: 'silent' }),
-        browser: ["Ubuntu", "Chrome", "20.0.04"] 
+        browser: ["Mac OS", "Chrome", "120.0.0.0"] 
     });
 
+    // Mekanisme request kode pairing via Railway Terminal Logs
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
-            console.log(`\n⏳ Sedang meminta kode pairing untuk nomor: ${NOMOR_BOT}...`);
+            console.log(`\n⏳ [BOT ${nomor}] Sedang meminta kode pairing...`);
             try {
-                let code = await sock.requestPairingCode(NOMOR_BOT);
+                let code = await sock.requestPairingCode(nomor);
                 code = code?.match(/.{1,4}/g)?.join("-") || code;
-                console.log(`\n======================================`);
-                console.log(`🔥 KODE PAIRING WHATSAPP KAMU : ${code}`);
-                console.log(`======================================\n`);
+                console.log(`\n==============================================`);
+                console.log(`🔥 KODE PAIRING UNTUK BOT [${nomor}]: ${code}`);
+                console.log(`==============================================\n`);
             } catch (error) {
-                console.error('Gagal meminta kode pairing.', error);
+                console.error(`Gagal meminta kode pairing untuk ${nomor}:`, error.message);
             }
-        }, 3000);
+        }, 5000); 
     }
 
     sock.ev.on('creds.update', saveCreds);
@@ -43,11 +55,12 @@ async function jalankanBot() {
         const { connection, lastDisconnect } = update;
         if (connection === 'close') {
             const alasan = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 0;
-            if (alasan !== DisconnectReason.loggedOut) jalankanBot();
+            if (alasan !== DisconnectReason.loggedOut) {
+                console.log(`🔄 [BOT ${nomor}] Koneksi terputus, mencoba menghubungkan kembali...`);
+                inisialisasiBot(konfigurasiBot);
+            }
         } else if (connection === 'open') {
-            console.log('\n==============================================');
-            console.log('     BOT WHATSAPP PATUNGAN MINIMALIS AKTIF!   ');
-            console.log('==============================================\n');
+            console.log(`✅ [BOT ${nomor}] BERHASIL AKTIF & TERHUBUNG!`);
         }
     });
 
@@ -58,7 +71,9 @@ async function jalankanBot() {
             const metadataGrup = await sock.groupMetadata(id);
             const namaGrup = metadataGrup.subject;
             const jumlahAnggota = metadataGrup.participants.length;
-            const hargaPerOrang = TOTAL_HARGA / jumlahAnggota;
+            
+            const totalHargaGrup = memoriHarga[id] || HARGA_DEFAULT;
+            const hargaPerOrang = totalHargaGrup / jumlahAnggota;
 
             let teksStatus = action === 'add' ? `📥 *ANGGOTA BARU BERGABUNG!*` : action === 'remove' ? `📤 *ANGGOTA TELAH KELUAR/DI-KICK!*` : '';
             if (!teksStatus) return;
@@ -66,7 +81,7 @@ async function jalankanBot() {
             let templatePesan = `${teksStatus}\n`;
             templatePesan += `🏠 Grup: *${namaGrup}*\n`;
             templatePesan += `─────────────────────────\n`;
-            templatePesan += `💰 Target Tagihan : *${formatRupiah(TOTAL_HARGA)}*\n`;
+            templatePesan += `💰 Target Tagihan : *${formatRupiah(totalHargaGrup)}*\n`;
             templatePesan += `👥 Jumlah Anggota : *${jumlahAnggota} orang*\n`;
             templatePesan += `📉 *Biaya Per Orang : ${formatRupiah(hargaPerOrang)}*\n`;
             templatePesan += `─────────────────────────\n`;
@@ -91,22 +106,34 @@ async function jalankanBot() {
             try {
                 const metadataGrup = await sock.groupMetadata(infoGrup);
                 const jumlahAnggota = metadataGrup.participants.length;
-                const hargaPerOrang = TOTAL_HARGA / jumlahAnggota;
+                
+                const totalHargaGrup = memoriHarga[infoGrup] || HARGA_DEFAULT;
+                const hargaPerOrang = totalHargaGrup / jumlahAnggota;
 
-                let infoPesan = `💰 Total Tagihan : *${formatRupiah(TOTAL_HARGA)}*\n`;
+                let infoPesan = `💰 Total Tagihan : *${formatRupiah(totalHargaGrup)}*\n`;
                 infoPesan += `👥 Total Anggota : *${jumlahAnggota} orang*\n`;
                 infoPesan += `📉 *Biaya Per Orang : ${formatRupiah(hargaPerOrang)}*\n───────────────────\n`;
-                infoPesan += `🔗 *LINK KONFIRMASI:* https://wa.me/${NOMOR_BOT}?text=Halo%20saya%20sudah%20bayar%20patungan`;
+                infoPesan += `🔗 *LINK KONFIRMASI:* https://wa.me/${nomor}?text=Halo%20saya%20sudah%20bayar%20patungan`;
 
-                if (fs.existsSync('./qris.jpg')) {
-                    const gambarBuffer = fs.readFileSync('./qris.jpg');
+                // Logika Penentuan File QRIS Otomatis
+                const namaGambarSpesifik = `./qris_${folderSesi}.jpg`; 
+                const namaGambarDefault = './qris.jpg';
+
+                if (fs.existsSync(namaGambarSpesifik)) {
+                    // Jika ada QRIS khusus untuk nomor ini (Pilihan B)
+                    const gambarBuffer = fs.readFileSync(namaGambarSpesifik);
+                    await sock.sendMessage(infoGrup, { image: gambarBuffer, caption: infoPesan }, { quoted: msg });
+                } else if (fs.existsSync(namaGambarDefault)) {
+                    // Jika tidak ada QRIS khusus, pakai QRIS standar global (Pilihan A)
+                    const gambarBuffer = fs.readFileSync(namaGambarDefault);
                     await sock.sendMessage(infoGrup, { image: gambarBuffer, caption: infoPesan }, { quoted: msg });
                 } else {
-                    await sock.sendMessage(infoGrup, { text: infoPesan + '\n\n⚠️ _File qris.jpg tidak ditemukan di folder bot!_' }, { quoted: msg });
+                    // Jika file QRIS sama sekali tidak ada di repositori
+                    await sock.sendMessage(infoGrup, { text: infoPesan + '\n\n⚠️ _File gambar QRIS tidak ditemukan di folder bot!_' }, { quoted: msg });
                 }
 
             } catch (e) { 
-                console.log("Error Patungan:", e.message); 
+                console.log(`Error Patungan [BOT ${nomor}]:`, e.message); 
             }
         }
 
@@ -114,13 +141,14 @@ async function jalankanBot() {
             const hargaBaru = parseInt(argumen[0]);
             if (isNaN(hargaBaru) || hargaBaru <= 0) return;
 
-            TOTAL_HARGA = hargaBaru;
+            memoriHarga[infoGrup] = hargaBaru;
+            
             const metadataGrup = await sock.groupMetadata(infoGrup);
             const jumlahAnggota = metadataGrup.participants.length;
-            const hargaPerOrang = TOTAL_HARGA / jumlahAnggota;
+            const hargaPerOrang = hargaBaru / jumlahAnggota;
 
             let pesanSukses = `✅ *Target Patungan Berhasil Diubah!*\n\n`;
-            pesanSukses += `💰 Tagihan Baru : *${formatRupiah(TOTAL_HARGA)}*\n`;
+            pesanSukses += `💰 Tagihan Baru : *${formatRupiah(hargaBaru)}*\n`;
             pesanSukses += `📉 *Biaya Baru/Orang : ${formatRupiah(hargaPerOrang)}* (${jumlahAnggota} anggota)`;
 
             await sock.sendMessage(infoGrup, { text: pesanSukses }, { quoted: msg });
@@ -128,4 +156,12 @@ async function jalankanBot() {
     });
 }
 
-jalankanBot();
+// 2. RUNNING MULTI-BOT SYSTEM
+console.log(`==============================================`);
+console.log(`🚀 MEMULAI SISTEM MULTI-BOT SINKRON...`);
+console.log(`📦 Menyalakan total: ${DAFTAR_BOT.length} nomor bot.`);
+console.log(`==============================================\n`);
+
+DAFTAR_BOT.forEach((bot) => {
+    inisialisasiBot(bot);
+});
