@@ -1,4 +1,3 @@
-cat << 'EOF' > index.js
 const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
@@ -94,7 +93,6 @@ async function jalankanBot() {
                 const jumlahAnggota = metadataGrup.participants.length;
                 const hargaPerOrang = TOTAL_HARGA / jumlahAnggota;
 
-                // Teks yang sudah bersih dan dipangkas total
                 let infoPesan = `💰 Total Tagihan : *${formatRupiah(TOTAL_HARGA)}*\n`;
                 infoPesan += `👥 Total Anggota : *${jumlahAnggota} orang*\n`;
                 infoPesan += `📉 *Biaya Per Orang : ${formatRupiah(hargaPerOrang)}*\n───────────────────\n`;
@@ -131,4 +129,3 @@ async function jalankanBot() {
 }
 
 jalankanBot();
-EOF
