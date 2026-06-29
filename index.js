@@ -11,7 +11,7 @@ const DAFTAR_BOT = [
 // Penyimpanan target harga dinamis
 const memoriHarga = {};
 
-// Harga dikunci sesuai request, tidak akan berubah oleh setharga
+// Harga grup dikunci permanen di Rp 790.000 untuk dicoret
 const HARGA_CORET_TETAP = 790000; 
 const HARGA_SETELAH_DISKON_DEFAULT = 300000; 
 
@@ -67,29 +67,35 @@ async function inisialisasiBot(konfigurasiBot) {
         }
     });
 
+    // RESPON KELUAR MASUK (HARGA ASLI SUDAH DIHAPUS)
     sock.ev.on('group-participants.update', async (update) => {
         const { id, action } = update;
         try {
+            if (action !== 'add' && action !== 'remove') return;
+            
             await delay(2000); 
             const metadataGrup = await sock.groupMetadata(id);
-            const namaGrup = metadataGrup.subject;
             const jumlahAnggota = metadataGrup.participants.length;
             
             const hargaBayarGrup = memoriHarga[id] || HARGA_SETELAH_DISKON_DEFAULT;
             const hargaPerOrang = hargaBayarGrup / jumlahAnggota;
 
-            let teksStatus = action === 'add' ? `ANGGOTA BARU BERGABUNG!` : action === 'remove' ? `ANGGOTA TELAH KELUAR/DI-KICK!` : '';
-            if (!teksStatus) return;
+            let infoPesan = `Harga Grup : ${buatTeksCoret(formatRupiah(HARGA_CORET_TETAP))}\n`;
+            infoPesan += `Total Anggota : *${jumlahAnggota} orang*\n`;
+            infoPesan += `Biaya Per Orang : *${formatRupiah(hargaPerOrang)}*\n`;
 
-            let templatePesan = `*${teksStatus}*\n`;
-            templatePesan += `Grup: *${namaGrup}*\n`;
-            templatePesan += `─────────────────────────\n`;
-            templatePesan += `Harga Grup : ${buatTeksCoret(formatRupiah(HARGA_CORET_TETAP))} *${formatRupiah(hargaBayarGrup)}*\n`;
-            templatePesan += `Jumlah Anggota : *${jumlahAnggota} orang*\n`;
-            templatePesan += `Biaya Per Orang : *${formatRupiah(hargaPerOrang)}*\n`;
-            templatePesan += `─────────────────────────\n`;
+            const namaGambarSpesifik = `./qris_${folderSesi}.jpg`; 
+            const namaGambarDefault = './qris.jpg';
 
-            await sock.sendMessage(id, { text: templatePesan });
+            if (fs.existsSync(namaGambarSpesifik)) {
+                const gambarBuffer = fs.readFileSync(namaGambarSpesifik);
+                await sock.sendMessage(id, { image: gambarBuffer, caption: infoPesan });
+            } else if (fs.existsSync(namaGambarDefault)) {
+                const gambarBuffer = fs.readFileSync(namaGambarDefault);
+                await sock.sendMessage(id, { image: gambarBuffer, caption: infoPesan });
+            } else {
+                await sock.sendMessage(id, { text: infoPesan + '\n\nFile gambar QRIS tidak ditemukan di folder bot!' });
+            }
         } catch (err) { console.error(err); }
     });
 
@@ -104,8 +110,8 @@ async function inisialisasiBot(konfigurasiBot) {
         const argumen = isiChat.trim().split(/ +/);
         const perintah = argumen.shift().toLowerCase();
 
-        // 1. PERINTAH: bayar
-        if (perintah === 'bayar' && isGroup) {
+        // 1. PERINTAH: status (HARGA ASLI SUDAH DIHAPUS)
+        if (perintah === 'status' && isGroup) {
             try {
                 const metadataGrup = await sock.groupMetadata(infoGrup);
                 const jumlahAnggota = metadataGrup.participants.length;
@@ -113,7 +119,7 @@ async function inisialisasiBot(konfigurasiBot) {
                 const hargaBayarGrup = memoriHarga[infoGrup] || HARGA_SETELAH_DISKON_DEFAULT;
                 const hargaPerOrang = hargaBayarGrup / jumlahAnggota;
 
-                let infoPesan = `Harga Grup : ${buatTeksCoret(formatRupiah(HARGA_CORET_TETAP))} *${formatRupiah(hargaBayarGrup)}*\n`;
+                let infoPesan = `Harga Grup : ${buatTeksCoret(formatRupiah(HARGA_CORET_TETAP))}\n`;
                 infoPesan += `Total Anggota : *${jumlahAnggota} orang*\n`;
                 infoPesan += `Biaya Per Orang : *${formatRupiah(hargaPerOrang)}*\n`;
 
@@ -122,16 +128,16 @@ async function inisialisasiBot(konfigurasiBot) {
 
                 if (fs.existsSync(namaGambarSpesifik)) {
                     const gambarBuffer = fs.readFileSync(namaGambarSpesifik);
-                    await sock.sendMessage(infoGrup, { image: gambarBuffer, caption: infoPesan }, { quoted: msg });
+                    await sock.sendMessage(infoGrup, { image: gambarBuffer, caption: infoPesan });
                 } else if (fs.existsSync(namaGambarDefault)) {
                     const gambarBuffer = fs.readFileSync(namaGambarDefault);
-                    await sock.sendMessage(infoGrup, { image: gambarBuffer, caption: infoPesan }, { quoted: msg });
+                    await sock.sendMessage(infoGrup, { image: gambarBuffer, caption: infoPesan });
                 } else {
-                    await sock.sendMessage(infoGrup, { text: infoPesan + '\n\nFile gambar QRIS tidak ditemukan di folder bot!' }, { quoted: msg });
+                    await sock.sendMessage(infoGrup, { text: infoPesan + '\n\nFile gambar QRIS tidak ditemukan di folder bot!' });
                 }
 
             } catch (e) { 
-                console.log(`Error Bayar [BOT ${nomor}]:`, e.message); 
+                console.log(`Error Status [BOT ${nomor}]:`, e.message); 
             }
         }
 
@@ -140,7 +146,6 @@ async function inisialisasiBot(konfigurasiBot) {
             const hargaBaru = parseInt(argumen[0]);
             if (isNaN(hargaBaru) || hargaBaru <= 0) return;
 
-            // Hanya mengubah harga setelah diskon
             memoriHarga[infoGrup] = hargaBaru;
             
             const metadataGrup = await sock.groupMetadata(infoGrup);
@@ -148,10 +153,10 @@ async function inisialisasiBot(konfigurasiBot) {
             const hargaPerOrang = hargaBaru / jumlahAnggota;
 
             let pesanSukses = `✅ Target Patungan Berhasil Diubah!\n\n`;
-            pesanSukses += `Harga Grup Baru : ${buatTeksCoret(formatRupiah(HARGA_CORET_TETAP))} *${formatRupiah(hargaBaru)}*\n`;
+            pesanSukses += `Harga Grup Baru : ${buatTeksCoret(formatRupiah(HARGA_CORET_TETAP))}\n`;
             pesanSukses += `Biaya Baru/Orang : *${formatRupiah(hargaPerOrang)}* (${jumlahAnggota} anggota)`;
 
-            await sock.sendMessage(infoGrup, { text: pesanSukses }, { quoted: msg });
+            await sock.sendMessage(infoGrup, { text: pesanSukses });
         }
     });
 }
