@@ -5,10 +5,9 @@ const fs = require('fs');
 const PREFIX = '!'; 
 
 // 1. DAFTAR NOMOR BOT YANG INGIN DIAKTIFKAN
-// Kamu bisa menambah baris ke bawah sesuai dengan jumlah bot yang ingin dijalankan secara paralel.
 const DAFTAR_BOT = [
     { nomor: '6285156779923', folderSesi: 'sesi_bot_1' },
-    { nomor: '6289691685228', folderSesi: 'sesi_bot_2' } // Contoh nomor kedua (silakan ganti dengan nomor aktifmu)
+    { nomor: '6289691685228', folderSesi: 'sesi_bot_2' } 
 ];
 
 // Penyimpanan target harga dinamis agar tidak saling bercampur antar grup/bot
@@ -19,7 +18,35 @@ function formatRupiah(angka) {
     return 'Rp ' + Math.ceil(angka).toLocaleString('id-ID');
 }
 
-// Fungsi utama pemicu instance bot WhatsApp
+// Fungsi membuat teks coret di WhatsApp
+function buatTeksCoret(teks) {
+    return `~${teks}~`;
+}
+
+// Fungsi pembantu untuk membuat format pesan status standar
+function buatTemplatePesan(hargaAktif, jumlahAnggota, hargaPerOrang) {
+    let infoPesan = `Harga Grup : ${buatTeksCoret(formatRupiah(hargaAktif))}\n`;
+    infoPesan += `Total Anggota : *${jumlahAnggota} orang*\n`;
+    infoPesan += `Biaya Per Orang : *${formatRupiah(hargaPerOrang)}*\n`;
+    return infoPesan;
+}
+
+// Fungsi pembantu untuk mengirim gambar QRIS + Caption
+async function kirimResponQRIS(sock, idGrup, folderSesi, teksPesan) {
+    const namaGambarSpesifik = `./qris_${folderSesi}.jpg`; 
+    const namaGambarDefault = './qris.jpg';
+
+    if (fs.existsSync(namaGambarSpesifik)) {
+        const gambarBuffer = fs.readFileSync(namaGambarSpesifik);
+        await sock.sendMessage(idGrup, { image: gambarBuffer, caption: teksPesan });
+    } else if (fs.existsSync(namaGambarDefault)) {
+        const gambarBuffer = fs.readFileSync(namaGambarDefault);
+        await sock.sendMessage(idGrup, { image: gambarBuffer, caption: teksPesan });
+    } else {
+        await sock.sendMessage(idGrup, { text: teksPesan + '\n\n⚠️ _File gambar QRIS tidak ditemukan di folder bot!_' });
+    }
+}
+
 async function inisialisasiBot(konfigurasiBot) {
     const { nomor, folderSesi } = konfigurasiBot;
     const { state, saveCreds } = await useMultiFileAuthState(folderSesi);
@@ -33,7 +60,6 @@ async function inisialisasiBot(konfigurasiBot) {
         browser: ["Mac OS", "Chrome", "120.0.0.0"] 
     });
 
-    // Mekanisme request kode pairing via Railway Terminal Logs
     if (!sock.authState.creds.registered) {
         setTimeout(async () => {
             console.log(`\n⏳ [BOT ${nomor}] Sedang meminta kode pairing...`);
@@ -64,29 +90,21 @@ async function inisialisasiBot(konfigurasiBot) {
         }
     });
 
+    // RESPON KELUAR MASUK DISAMAKAN DENGAN FORMAT STATUS (TANPA REPLY)
     sock.ev.on('group-participants.update', async (update) => {
         const { id, action } = update;
         try {
+            if (action !== 'add' && action !== 'remove') return;
+
             await delay(2000); 
             const metadataGrup = await sock.groupMetadata(id);
-            const namaGrup = metadataGrup.subject;
             const jumlahAnggota = metadataGrup.participants.length;
             
-            const totalHargaGrup = memoriHarga[id] || HARGA_DEFAULT;
-            const hargaPerOrang = totalHargaGrup / jumlahAnggota;
+            const hargaAktif = memoriHarga[id] || HARGA_DEFAULT;
+            const hargaPerOrang = hargaAktif / jumlahAnggota;
 
-            let teksStatus = action === 'add' ? `📥 *ANGGOTA BARU BERGABUNG!*` : action === 'remove' ? `📤 *ANGGOTA TELAH KELUAR/DI-KICK!*` : '';
-            if (!teksStatus) return;
-
-            let templatePesan = `${teksStatus}\n`;
-            templatePesan += `🏠 Grup: *${namaGrup}*\n`;
-            templatePesan += `─────────────────────────\n`;
-            templatePesan += `💰 Target Tagihan : *${formatRupiah(totalHargaGrup)}*\n`;
-            templatePesan += `👥 Jumlah Anggota : *${jumlahAnggota} orang*\n`;
-            templatePesan += `📉 *Biaya Per Orang : ${formatRupiah(hargaPerOrang)}*\n`;
-            templatePesan += `─────────────────────────\n`;
-
-            await sock.sendMessage(id, { text: templatePesan });
+            const templatePesan = buatTemplatePesan(hargaAktif, jumlahAnggota, hargaPerOrang);
+            await kirimResponQRIS(sock, id, folderSesi, templatePesan);
         } catch (err) { console.error(err); }
     });
 
@@ -102,41 +120,24 @@ async function inisialisasiBot(konfigurasiBot) {
         const argumen = isiChat.slice(PREFIX.length).trim().split(/ +/);
         const perintah = argumen.shift().toLowerCase();
 
-        if (perintah === 'patungan' && isGroup) {
+        // 1. PERINTAH: !status (Ganti dari !patungan, tanpa reply)
+        if (perintah === 'status' && isGroup) {
             try {
                 const metadataGrup = await sock.groupMetadata(infoGrup);
                 const jumlahAnggota = metadataGrup.participants.length;
                 
-                const totalHargaGrup = memoriHarga[infoGrup] || HARGA_DEFAULT;
-                const hargaPerOrang = totalHargaGrup / jumlahAnggota;
+                const hargaAktif = memoriHarga[infoGrup] || HARGA_DEFAULT;
+                const hargaPerOrang = hargaAktif / jumlahAnggota;
 
-                let infoPesan = `💰 Total Tagihan : *${formatRupiah(totalHargaGrup)}*\n`;
-                infoPesan += `👥 Total Anggota : *${jumlahAnggota} orang*\n`;
-                infoPesan += `📉 *Biaya Per Orang : ${formatRupiah(hargaPerOrang)}*\n───────────────────\n`;
-                infoPesan += `🔗 *LINK KONFIRMASI:* https://wa.me/${nomor}?text=Halo%20saya%20sudah%20bayar%20patungan`;
-
-                // Logika Penentuan File QRIS Otomatis
-                const namaGambarSpesifik = `./qris_${folderSesi}.jpg`; 
-                const namaGambarDefault = './qris.jpg';
-
-                if (fs.existsSync(namaGambarSpesifik)) {
-                    // Jika ada QRIS khusus untuk nomor ini (Pilihan B)
-                    const gambarBuffer = fs.readFileSync(namaGambarSpesifik);
-                    await sock.sendMessage(infoGrup, { image: gambarBuffer, caption: infoPesan }, { quoted: msg });
-                } else if (fs.existsSync(namaGambarDefault)) {
-                    // Jika tidak ada QRIS khusus, pakai QRIS standar global (Pilihan A)
-                    const gambarBuffer = fs.readFileSync(namaGambarDefault);
-                    await sock.sendMessage(infoGrup, { image: gambarBuffer, caption: infoPesan }, { quoted: msg });
-                } else {
-                    // Jika file QRIS sama sekali tidak ada di repositori
-                    await sock.sendMessage(infoGrup, { text: infoPesan + '\n\n⚠️ _File gambar QRIS tidak ditemukan di folder bot!_' }, { quoted: msg });
-                }
+                const templatePesan = buatTemplatePesan(hargaAktif, jumlahAnggota, hargaPerOrang);
+                await kirimResponQRIS(sock, infoGrup, folderSesi, templatePesan);
 
             } catch (e) { 
-                console.log(`Error Patungan [BOT ${nomor}]:`, e.message); 
+                console.log(`Error Status [BOT ${nomor}]:`, e.message); 
             }
         }
 
+        // 2. PERINTAH: !setharga (Tanpa reply)
         if (perintah === 'setharga' && isGroup) {
             const hargaBaru = parseInt(argumen[0]);
             if (isNaN(hargaBaru) || hargaBaru <= 0) return;
@@ -148,10 +149,10 @@ async function inisialisasiBot(konfigurasiBot) {
             const hargaPerOrang = hargaBaru / jumlahAnggota;
 
             let pesanSukses = `✅ *Target Patungan Berhasil Diubah!*\n\n`;
-            pesanSukses += `💰 Tagihan Baru : *${formatRupiah(hargaBaru)}*\n`;
-            pesanSukses += `📉 *Biaya Baru/Orang : ${formatRupiah(hargaPerOrang)}* (${jumlahAnggota} anggota)`;
+            pesanSukses += `Harga Grup Baru : ${buatTeksCoret(formatRupiah(hargaBaru))}\n`;
+            pesanSukses += `Biaya Baru/Orang : *${formatRupiah(hargaPerOrang)}* (${jumlahAnggota} anggota)`;
 
-            await sock.sendMessage(infoGrup, { text: pesanSukses }, { quoted: msg });
+            await sock.sendMessage(infoGrup, { text: pesanSukses });
         }
     });
 }
