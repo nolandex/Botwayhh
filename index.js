@@ -11,9 +11,9 @@ const DAFTAR_BOT = [
 // Penyimpanan target harga dinamis
 const memoriHarga = {};
 
-// Nilai standar awal sesuai konsep gambar kamu
-const HARGA_SEBELUM_DISKON_DEFAULT = 799999; // Ini yang dicoret (lebih mahal)
-const HARGA_SETELAH_DISKON_DEFAULT = 300000; // Ini yang dibayar (harga asli bot)
+// Nilai standar awal pas Rp 790.000 dicoret
+const HARGA_SEBELUM_DISKON_DEFAULT = 790000; // Ini yang dicoret
+const HARGA_SETELAH_DISKON_DEFAULT = 300000; // Ini yang dibayar
 
 function formatRupiah(angka) {
     return 'Rp ' + Math.ceil(angka).toLocaleString('id-ID');
@@ -117,8 +117,7 @@ async function inisialisasiBot(konfigurasiBot) {
 
                 let infoPesan = `Harga Grup : ${buatTeksCoret(formatRupiah(hargaCoretGrup))} *${formatRupiah(hargaBayarGrup)}*\n`;
                 infoPesan += `Total Anggota : *${jumlahAnggota} orang*\n`;
-                infoPesan += `Biaya Per Orang : *${formatRupiah(hargaPerOrang)}*\n───────────────────\n`;
-                infoPesan += `LINK KONFIRMASI: https://wa.me/${nomor}?text=Halo%20saya%20sudah%20bayar%20patungan`;
+                infoPesan += `Biaya Per Orang : *${formatRupiah(hargaPerOrang)}*\n`;
 
                 const namaGambarSpesifik = `./qris_${folderSesi}.jpg`; 
                 const namaGambarDefault = './qris.jpg';
@@ -143,8 +142,8 @@ async function inisialisasiBot(konfigurasiBot) {
             const hargaBaru = parseInt(argumen[0]);
             if (isNaN(hargaBaru) || hargaBaru <= 0) return;
 
-            // Membuat harga coret otomatis yang lebih mahal (dikali 2.66 dari harga baru)
-            const hargaCoretBaru = Math.ceil(hargaBaru * 2.66); 
+            // Membuat harga coret tiruan otomatis yang sebanding lebih mahal (dikali 2.63 agar proporsional)
+            const hargaCoretBaru = Math.ceil(hargaBaru * 2.63); 
 
             memoriHarga[infoGrup] = {
                 setelahDiskon: hargaBaru,
