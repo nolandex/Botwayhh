@@ -1,4 +1,4 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, delay, fetchLatestBaileysVersion, Browsers } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const fs = require('fs');
 
@@ -28,12 +28,13 @@ async function inisialisasiBot(konfigurasiBot) {
     const { state, saveCreds } = await useMultiFileAuthState(folderSesi);
     const { version } = await fetchLatestBaileysVersion();
 
+    // Browser dikonfigurasi menggunakan format standar Baileys yang aman dari pemblokiran tautan perangkat terbaru
     const sock = makeWASocket({
         auth: state,
         version,
         printQRInTerminal: false, 
         logger: require('pino')({ level: 'silent' }),
-        browser: ["Mac OS", "Chrome", "120.0.0.0"] 
+        browser: Browsers.ubuntu('Chrome')
     });
 
     if (!sock.authState.creds.registered) {
