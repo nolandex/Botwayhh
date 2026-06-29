@@ -11,9 +11,9 @@ const DAFTAR_BOT = [
 // Penyimpanan target harga dinamis
 const memoriHarga = {};
 
-// Nilai standar awal pas Rp 790.000 dicoret
-const HARGA_SEBELUM_DISKON_DEFAULT = 790000; // Ini yang dicoret
-const HARGA_SETELAH_DISKON_DEFAULT = 300000; // Ini yang dibayar
+// Harga dikunci sesuai request, tidak akan berubah oleh setharga
+const HARGA_CORET_TETAP = 790000; 
+const HARGA_SETELAH_DISKON_DEFAULT = 300000; 
 
 function formatRupiah(angka) {
     return 'Rp ' + Math.ceil(angka).toLocaleString('id-ID');
@@ -75,8 +75,7 @@ async function inisialisasiBot(konfigurasiBot) {
             const namaGrup = metadataGrup.subject;
             const jumlahAnggota = metadataGrup.participants.length;
             
-            const hargaBayarGrup = memoriHarga[id] ? memoriHarga[id].setelahDiskon : HARGA_SETELAH_DISKON_DEFAULT;
-            const hargaCoretGrup = memoriHarga[id] ? memoriHarga[id].sebelumDiskon : HARGA_SEBELUM_DISKON_DEFAULT;
+            const hargaBayarGrup = memoriHarga[id] || HARGA_SETELAH_DISKON_DEFAULT;
             const hargaPerOrang = hargaBayarGrup / jumlahAnggota;
 
             let teksStatus = action === 'add' ? `ANGGOTA BARU BERGABUNG!` : action === 'remove' ? `ANGGOTA TELAH KELUAR/DI-KICK!` : '';
@@ -85,7 +84,7 @@ async function inisialisasiBot(konfigurasiBot) {
             let templatePesan = `*${teksStatus}*\n`;
             templatePesan += `Grup: *${namaGrup}*\n`;
             templatePesan += `─────────────────────────\n`;
-            templatePesan += `Harga Grup : ${buatTeksCoret(formatRupiah(hargaCoretGrup))} *${formatRupiah(hargaBayarGrup)}*\n`;
+            templatePesan += `Harga Grup : ${buatTeksCoret(formatRupiah(HARGA_CORET_TETAP))} *${formatRupiah(hargaBayarGrup)}*\n`;
             templatePesan += `Jumlah Anggota : *${jumlahAnggota} orang*\n`;
             templatePesan += `Biaya Per Orang : *${formatRupiah(hargaPerOrang)}*\n`;
             templatePesan += `─────────────────────────\n`;
@@ -111,11 +110,10 @@ async function inisialisasiBot(konfigurasiBot) {
                 const metadataGrup = await sock.groupMetadata(infoGrup);
                 const jumlahAnggota = metadataGrup.participants.length;
                 
-                const hargaBayarGrup = memoriHarga[infoGrup] ? memoriHarga[infoGrup].setelahDiskon : HARGA_SETELAH_DISKON_DEFAULT;
-                const hargaCoretGrup = memoriHarga[infoGrup] ? memoriHarga[infoGrup].sebelumDiskon : HARGA_SEBELUM_DISKON_DEFAULT;
+                const hargaBayarGrup = memoriHarga[infoGrup] || HARGA_SETELAH_DISKON_DEFAULT;
                 const hargaPerOrang = hargaBayarGrup / jumlahAnggota;
 
-                let infoPesan = `Harga Grup : ${buatTeksCoret(formatRupiah(hargaCoretGrup))} *${formatRupiah(hargaBayarGrup)}*\n`;
+                let infoPesan = `Harga Grup : ${buatTeksCoret(formatRupiah(HARGA_CORET_TETAP))} *${formatRupiah(hargaBayarGrup)}*\n`;
                 infoPesan += `Total Anggota : *${jumlahAnggota} orang*\n`;
                 infoPesan += `Biaya Per Orang : *${formatRupiah(hargaPerOrang)}*\n`;
 
@@ -142,20 +140,15 @@ async function inisialisasiBot(konfigurasiBot) {
             const hargaBaru = parseInt(argumen[0]);
             if (isNaN(hargaBaru) || hargaBaru <= 0) return;
 
-            // Membuat harga coret tiruan otomatis yang sebanding lebih mahal (dikali 2.63 agar proporsional)
-            const hargaCoretBaru = Math.ceil(hargaBaru * 2.63); 
-
-            memoriHarga[infoGrup] = {
-                setelahDiskon: hargaBaru,
-                sebelumDiskon: hargaCoretBaru
-            };
+            // Hanya mengubah harga setelah diskon
+            memoriHarga[infoGrup] = hargaBaru;
             
             const metadataGrup = await sock.groupMetadata(infoGrup);
             const jumlahAnggota = metadataGrup.participants.length;
             const hargaPerOrang = hargaBaru / jumlahAnggota;
 
             let pesanSukses = `✅ Target Patungan Berhasil Diubah!\n\n`;
-            pesanSukses += `Harga Grup Baru : ${buatTeksCoret(formatRupiah(hargaCoretBaru))} *${formatRupiah(hargaBaru)}*\n`;
+            pesanSukses += `Harga Grup Baru : ${buatTeksCoret(formatRupiah(HARGA_CORET_TETAP))} *${formatRupiah(hargaBaru)}*\n`;
             pesanSukses += `Biaya Baru/Orang : *${formatRupiah(hargaPerOrang)}* (${jumlahAnggota} anggota)`;
 
             await sock.sendMessage(infoGrup, { text: pesanSukses }, { quoted: msg });
